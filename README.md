@@ -31,3 +31,4 @@ As a guide though, the licenses most commonly used are
 * [GNU GPL V3](https://www.bentasker.co.uk/pages/licenses/gnu-gpl-v2.html)
 * [MIT](https://www.bentasker.co.uk/pages/licenses/mit-license.html)
 
+My default license is [detailed here](https://www.bentasker.co.uk/pages/licensedetails.html)
