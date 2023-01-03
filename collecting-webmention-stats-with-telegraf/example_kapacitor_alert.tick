@@ -1,0 +1,40 @@
+var id = 'Webmention ID {{ index .Tags "id" }}'
+
+var message = 'New Webmention for {{ index .Tags "domain" }} on {{ index .Tags "srcdomain"}}'
+
+var details = '''New Webmention for {{ index .Tags "domain" }} on {{ index .Tags "srcdomain"}}.
+<br /><br />
+Webmention id: {{ index .Fields "id"}} <br />
+Author: {{ index .Tags "author" }} ({{ index .Fields "author_url" }}) <br />
+Link: {{ index .Fields "linked_from" }} <br />
+References: {{ index .Tags "url" }} <br />
+
+Content:
+<br />
+{{ index .Fields "content" }}
+
+'''
+
+var data = batch
+    |queryFlux('''
+    from(bucket: "webmentions")
+        |> range(start: -6h)
+        |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+        // I've been a muppet and passed this in as a float
+        // caste to int to prevent printing with an exponent
+        |> map(fn: (r) => ({r with id: int(v: r.id)}))
+      ''')
+        .period(6h)
+        .every(6h)
+    |log()
+    |alert()
+        .warn(lambda: isPresent("domain"))
+        .message(message)
+        .id(id)
+        .idTag('alertID')
+        .levelTag('level')
+        .messageField('message')
+        .durationField('duration')
+        .details(details)
+        .email()
+        .to(<my alerts mail>)
