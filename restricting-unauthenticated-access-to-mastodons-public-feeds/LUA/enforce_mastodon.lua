@@ -42,7 +42,7 @@ function place_api_request(ngx, auth_header)
     end
     
     headers = {
-        useragent = "WAF Probe",
+        ["user-agent"] = "WAF Probe",
         host = ngx.var.origin_host_header,
         Authorization = auth_header 
     }
