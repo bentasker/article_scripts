@@ -195,7 +195,7 @@ if bipstr == nil then
     bipstr = ""
 end
 
-aipstr = ngx.var.blocked_ips
+aipstr = ngx.var.allowed_ips
 if aipstr == nil then
     aipstr = ""
 end
