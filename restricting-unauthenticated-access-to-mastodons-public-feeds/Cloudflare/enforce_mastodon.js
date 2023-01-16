@@ -9,7 +9,7 @@
 
 
 // The origin to send probe requests to
-const api_endpoint = "https://1.2.3.4/api/v2/suggestions";
+const api_endpoint = "https://192.0.2.11/api/v2/suggestions";
 
 // The host header to include in those requests
 const masto_host_head = "mastodon.bentasker.co.uk"
