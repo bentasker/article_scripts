@@ -1,0 +1,23 @@
+version: '3.1'
+
+services:
+
+    telegraf:
+         image: telegraf
+         restart: always
+         user: telegraf:995
+         container_name: telegraf
+         network_mode: "host"
+         environment:
+            HOST_ETC: /hostfs/etc
+            HOST_PROC: /hostfs/proc
+            HOST_SYS: /hostfs/sys
+            HOST_VAR: /hostfs/var
+            HOST_RUN: /hostfs/run
+            HOST_MOUNT_PREFIX: /hostfs
+         ports:
+            - 8086:8086
+         volumes:
+            - /home/pi/tank-monitoring-scripts/config/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf
+            - /var/run/docker.sock:/var/run/docker.sock
+            - /:/hostfs:ro
