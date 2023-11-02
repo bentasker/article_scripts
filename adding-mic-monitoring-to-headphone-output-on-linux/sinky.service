@@ -1,0 +1,10 @@
+[Unit]
+Description=Autodetect Mic coming in use and enable sidetone
+
+[Service]
+ExecStart=/bin/bash /home/ben/bin/sinky.sh
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+
