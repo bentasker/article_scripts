@@ -1,0 +1,106 @@
+# Pre-create the secrets with
+#
+# kubectl create secret generic threads --from-literal=username=<user> --from-literal=password=<pass>
+# kubectl create secret generic nostr --from-literal=nsec=<key>
+# kubectl create secret generic bluesky --from-literal=user=<bluesky email> --from-literal=pass=<pass>
+#
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: posse-publishing
+spec:
+  schedule: "*/15 * * * *"
+  failedJobsHistoryLimit: 5
+  successfulJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+        template:
+            spec:
+                restartPolicy: Never
+                volumes:
+                - name: hashdir
+                  persistentVolumeClaim:
+                    claimName: hashstore-claim
+                containers:
+                - name: posse-bot-container
+                  image: bentasker12/posse-publishing:0.4
+                  imagePullPolicy: IfNotPresent
+                  volumeMounts:
+                    - mountPath: /hashes
+                      name: hashdir
+                      readOnly: false                   
+                  env:
+                  - name: DRY_RUN
+                    value: "N"
+                  - name: "FEED_URL"
+                    value: "https://www.bentasker.co.uk/rss.xml"
+                  - name: "HASH_DIR"
+                    value: "/hashes"
+                  - name: "TRACKING_MODE"
+                    value: "PERURL"
+                  - name: "INCLUDE_AUTHOR"
+                    value: "False"
+                  - name: "NOSTR_RELAYS"
+                    value: "wss://relayable.org,wss://relay.damus.io,wss://nostr.easydns.ca,wss://nostrrelay.com,wss://relay.snort.social,wss://relay.nsecbunker.com"
+                  - name: BSKY_USER
+                    valueFrom: 
+                        secretKeyRef:
+                            name: bluesky
+                            key: user
+                  - name: BSKY_PASS
+                    valueFrom: 
+                        secretKeyRef:
+                            name: bluesky
+                            key: pass
+                  - name: THREADS_USER
+                    valueFrom: 
+                        secretKeyRef:
+                            name: threads
+                            key: username
+                  - name: THREADS_PASS
+                    valueFrom: 
+                        secretKeyRef:
+                            name: threads
+                            key: password
+                  - name: NOSTR_PK
+                    valueFrom: 
+                        secretKeyRef:
+                            name: nostr
+                            key: nsec
+
+# Storage - example uses a local volume
+kind: PersistentVolume
+metadata:
+  name: posse-hashstore
+spec:
+  claimRef:
+    name: hashstore-claim
+  capacity:
+    storage: 2Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: local-storage
+  local:
+    path: /home/ben/volumes/posse_publish
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - bumblebee
+
+kind: PersistentVolumeClaim
+metadata:
+  name: hashstore-claim
+spec:
+  storageClassName: local-storage
+  volumeName: "posse-hashstore"
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi 
