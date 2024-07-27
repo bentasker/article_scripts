@@ -1,0 +1,409 @@
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+     name: monitoring
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: influxdb-pv
+  namespace: monitoring
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+  - ReadWriteMany
+  storageClassName: nfs
+  nfs:
+    server: 192.168.3.233
+    path: "/volume1/kubernetes_misc_mounts"
+    readOnly: false
+
+    
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: influxdb-pvc
+  namespace: monitoring
+  labels:
+    app: influxdb
+spec:
+  storageClassName: nfs
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: influx-monitoring-files
+  namespace: monitoring
+data:
+  00_setup_dbrp: |
+    #!/bin/bash
+    influx v1 dbrp create \
+    --bucket-id ${DOCKER_INFLUXDB_INIT_BUCKET_ID} \
+    --db telegraf \
+    --rp autogen \
+    --default \
+    --org ${DOCKER_INFLUXDB_INIT_ORG}
+    
+    # Create the write user
+    influx v1 auth create \
+      --username ${V1_WRITE_USERNAME} \
+      --password ${V1_WRITE_PASSWORD} \
+      --write-bucket ${DOCKER_INFLUXDB_INIT_BUCKET_ID} \
+      --org ${DOCKER_INFLUXDB_INIT_ORG}
+    
+    influx v1 auth create \
+      --username ${V1_READ_USERNAME} \
+      --password ${V1_READ_PASSWORD} \
+      --read-bucket ${DOCKER_INFLUXDB_INIT_BUCKET_ID} \
+      --org ${DOCKER_INFLUXDB_INIT_ORG}
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: influxdb
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: influxdb
+  template:
+    metadata:
+      labels:
+        app: influxdb
+    spec:
+      securityContext:
+          fsGroup: 100
+          runAsUser: 1024
+          runAsGroup: 100
+      containers:
+        - env:
+            - name: DOCKER_INFLUXDB_INIT_MODE
+              value: "setup"
+            - name: DOCKER_INFLUXDB_INIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: user
+                  optional: false
+            - name: DOCKER_INFLUXDB_INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: password
+                  optional: false
+            - name: DOCKER_INFLUXDB_INIT_ORG
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: org
+                  optional: false
+            - name: V1_READ_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: readuser
+                  optional: false
+            - name: V1_READ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: readpass
+                  optional: false
+            - name: V1_WRITE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: writeuser
+                  optional: false
+            - name: V1_WRITE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: writepass
+                  optional: false
+
+            - name: DOCKER_INFLUXDB_INIT_BUCKET
+              value: "telegraf"
+            - name: DOCKER_INFLUXDB_INIT_RETENTION
+              value: "90d"
+            - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: influxdb-info
+                  key: token
+                  optional: false
+          image: influxdb:2.7
+          name: influxdb2
+          ports:
+            - containerPort: 8086
+              name: http-influxport
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 1Gi
+          volumeMounts:
+            - mountPath: /etc/influxdb2
+              name: influxdb-pvc
+              subPath: "influxdb/config"
+            - mountPath: /var/lib/influxdb2
+              name: influxdb-pvc
+              subPath: "influxdb/data"
+            - mountPath: /docker-entrypoint-initdb.d/create_dbrp.sh
+              name: mon-files
+              subPath: "00_setup_dbrp"
+      volumes:
+        - name: influxdb-pvc
+          persistentVolumeClaim:
+            claimName: influxdb-pvc
+        - name: mon-files
+          configMap:
+            name: influx-monitoring-files
+            defaultMode: 0755
+
+---
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: influxdb
+  name: influxdb
+  namespace: monitoring
+spec:
+  type: LoadBalancer
+  sessionAffinity: None
+  ports:
+    - port: 8086
+      name: influxapi
+      protocol: TCP
+      targetPort: http-influxport
+  selector:
+    app: influxdb
+
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telegraf
+  namespace: monitoring
+  labels:
+    app: telegraf
+data:
+  telegraf.conf: |+
+    [global_tags]
+      env = "$ENV"
+    [agent]
+      hostname = "$HOSTNAME"
+    [[outputs.influxdb]]
+      urls = ["$MONITOR_HOST"] # required
+      database = "$MONITOR_DATABASE" # required
+      username = "$V1_WRITE_USER"
+      password = "$V1_WRITE_PASSWORD"
+      timeout = "5s"
+      skip_database_creation = true
+
+    [[inputs.cpu]]
+      percpu = true
+      totalcpu = true
+      collect_cpu_time = false
+      report_active = false
+    [[inputs.disk]]
+      ignore_fs = ["tmpfs", "devtmpfs", "devfs"]
+    [[inputs.diskio]]
+    [[inputs.kernel]]
+    [[inputs.mem]]
+    [[inputs.processes]]
+    [[inputs.swap]]
+    [[inputs.system]]
+    [[inputs.kubernetes]]
+      url = "https://$HOSTIP:10250"
+      bearer_token = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      insecure_skip_verify = true
+      
+    [[inputs.kube_inventory]]
+      namespace = "" # Collect from all namespaces
+      bearer_token = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+---
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: telegraf
+  namespace: monitoring
+  labels:
+    app: telegraf
+spec:
+  selector:
+    matchLabels:
+      app: telegraf
+  template:
+    metadata:
+      labels:
+        app: telegraf
+    spec:
+      serviceAccountName: telegraf
+      containers:
+      - name: telegraf
+        image: telegraf:1.31
+        resources:
+          limits:
+            memory: 500Mi
+          requests:
+            cpu: 500m
+            memory: 250Mi
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: HOSTIP
+          valueFrom:
+            fieldRef:
+                fieldPath: status.hostIP
+        - name: "HOST_PROC"
+          value: "/rootfs/proc"
+        - name: "HOST_SYS"
+          value: "/rootfs/sys"
+        - name: ENV
+          value: "lab"
+        - name: V1_WRITE_USER
+          valueFrom:
+            secretKeyRef:
+              name: influxdb-info
+              key: writeuser
+              optional: false
+        - name: V1_WRITE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: influxdb-info
+              key: writepass
+              optional: false
+        - name: MONITOR_HOST
+          value: "http://influxdb:8086"
+        - name: MONITOR_DATABASE
+          value: "telegraf"
+        volumeMounts:
+        - name: sys
+          mountPath: /rootfs/sys
+          readOnly: true
+        - name: proc
+          mountPath: /rootfs/proc
+          readOnly: true
+        - name: utmp
+          mountPath: /var/run/utmp
+          readOnly: true
+        - name: config
+          mountPath: /etc/telegraf
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: utmp
+        hostPath:
+          path: /var/run/utmp
+      - name: config
+        configMap:
+          name: telegraf
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telegraf
+  namespace: monitoring
+  labels:
+    app: telegraf
+    
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: influx-stats-viewer
+  namespace: monitoring
+  labels:
+    app: telegraf
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes/proxy", "nodes/stats", "persistentvolumes", "nodes", "secrets"]
+    verbs: ["get", "list", "watch"]
+    
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: metric-scanner-kubelet-api-admin
+  labels:
+     app: telegraf
+subjects:
+- kind: ServiceAccount
+  name: telegraf
+  namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: system:kubelet-api-admin
+  apiGroup: rbac.authorization.k8s.io 
+
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: influx:telegraf
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        app: telegraf
+    - matchLabels:
+        rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules: [] # Rules are automatically filled in by the controller manager.
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: influx:telegraf:viewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: influx:telegraf
+subjects:
+  - kind: ServiceAccount
+    name: telegraf
+    namespace: monitoring
+
