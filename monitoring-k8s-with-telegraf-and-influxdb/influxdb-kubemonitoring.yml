@@ -73,6 +73,28 @@ data:
       --password ${V1_READ_PASSWORD} \
       --read-bucket ${DOCKER_INFLUXDB_INIT_BUCKET_ID} \
       --org ${DOCKER_INFLUXDB_INIT_ORG}
+    
+    if [ ! "$UPSTREAM_URL" == "" ]
+    then
+    # Configure EDR
+        
+    # Create the remote and capture the ID
+    REMOTE_ID=`influx remote create \
+    --name replicated \
+    --remote-url "$UPSTREAM_URL" \
+    --remote-api-token "$UPSTREAM_TOKEN" \
+    --remote-org-id "$UPSTREAM_ORG" | tail -n1 | awk '{print $1}'`
+    
+    # Set up replication
+    influx replication create \
+      --name replicated_data \
+      --remote-id $REMOTE_ID \
+      --local-bucket-id "${DOCKER_INFLUXDB_INIT_BUCKET_ID}" \
+      --remote-bucket "$UPSTREAM_BUCKET"
+      
+    fi
+
+      
 ---
 
 apiVersion: apps/v1
@@ -140,7 +162,32 @@ spec:
                   name: influxdb-info
                   key: writepass
                   optional: false
-
+            # These are optional and will be used if EDR is being
+            # configured
+            - name: UPSTREAM_URL
+              valueFrom:
+                secretKeyRef:
+                  name: upstream-influxdb
+                  key: url
+                  optional: true
+            - name: UPSTREAM_ORG
+              valueFrom:
+                secretKeyRef:
+                  name: upstream-influxdb
+                  key: org
+                  optional: true
+            - name: UPSTREAM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: upstream-influxdb
+                  key: token
+                  optional: true
+            - name: UPSTREAM_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: upstream-influxdb
+                  key: bucket
+                  optional: true
             - name: DOCKER_INFLUXDB_INIT_BUCKET
               value: "telegraf"
             - name: DOCKER_INFLUXDB_INIT_RETENTION

@@ -24,6 +24,15 @@ kubectl -n monitoring create secret generic influxdb-info \
 --from-literal=writepass="CHANGEME" \
 ```
 
+If you want to enable [Edge Data replication](https://www.influxdata.com/products/influxdb-edge-data-replication/) then you'll need to create a second secret containing details of your upstream InfluxDB instance
+```sh
+kubectl -n monitoring create secret generic upstream-influxdb \
+--from-literal=url='<URL>' \
+--from-literal=org="<ORG>" \
+--from-literal=token="<TOKEN>" \
+--from-literal=bucket="<BUCKET>"
+```
+
 You _should_ then just be able to apply the manifests to create the resources
 
 ```sh
