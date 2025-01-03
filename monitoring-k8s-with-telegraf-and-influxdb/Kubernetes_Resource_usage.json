@@ -556,7 +556,7 @@
             "type": "influxdb",
             "uid": "${DS_KUBERNETES_MONITORING (INFLUXQL)}"
           },
-          "query": "SELECT max(memory_usage_bytes)/max(memory_available_bytes) FROM kubernetes_node WHERE $timeFilter GROUP BY time($__interval), node_name",
+          "query": "SELECT max(memory_usage_bytes)/max(capacity_memory_bytes) FROM kubernetes_node WHERE $timeFilter GROUP BY time($__interval), node_name",
           "rawQuery": true,
           "refId": "A",
           "resultFormat": "time_series"
