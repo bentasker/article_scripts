@@ -1,5 +1,14 @@
 # Article Scripts
 
+### Repository Moved
+
+As of March 2024, this repository has moved and new scripts will only appear [on Codeberg](https://codeberg.org/bentasker/article-scripts).
+
+
+---
+
+### Background
+
 This repo is intended to hold a range of different scripts/implementations.
 
 It provides a single central location to store copies of miscellaneous scripts written for blog posts etc when there's no better home for them.
